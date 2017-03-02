@@ -6,13 +6,14 @@ import (
 	// "strconv"
 	"net/http"
 	"io/ioutil"
+	"flag"
+	"os"
+	"log"
+
+	. "github.com/ivantjh/flow/models"
 )
 
-type DeployLog struct {
-	id float64;
-	repoName string;
-	timeStamp string;
-}
+var configData []Config
 
 func handler(rw http.ResponseWriter, req *http.Request) {
 	// fmt.Println(req.Header)
@@ -28,9 +29,9 @@ func handler(rw http.ResponseWriter, req *http.Request) {
 	headCommit := data["head_commit"].(map[string]interface{})
 
 	var dl DeployLog
-	dl.id = (repo["id"].(float64))
-	dl.repoName = repo["name"].(string)
-	dl.timeStamp = headCommit["timestamp"].(string)
+	dl.Id = (repo["id"].(float64))
+	dl.RepoName = repo["name"].(string)
+	dl.TimeStamp = headCommit["timestamp"].(string)
 
 	// fmt.Println(repo)
 
@@ -39,9 +40,47 @@ func handler(rw http.ResponseWriter, req *http.Request) {
 	fmt.Println(dl)
 }
 
+func readfile(fileLocation string) {
+	file, err := ioutil.ReadFile(fileLocation)
+	if err != nil {
+		log.Printf("Unable to read %s\n%v\n", fileLocation, err)
+		os.Exit(1)
+	}
+
+	err = json.Unmarshal(file, &configData)
+	if err != nil {
+		log.Printf("Invalid json from %s\n%v\n", fileLocation, err)
+		os.Exit(1)
+	}
+
+	fmt.Println(configData)
+}
+
+func parseFlags() (fileLocation string){
+	flag.Usage = func() {
+		fmt.Println("Flow runs a deploy.sh script once commits on master are detected.")
+		fmt.Println("Add locations of repositories to be tracked.")
+		fmt.Println("Usage of Flow:")
+		fmt.Println("flow config.json")
+	}
+
+	flag.Parse()
+
+	if len(flag.Args()) == 0 {
+		fmt.Println("No config file specified")
+		os.Exit(1)
+	}
+
+	return flag.Args()[0]
+}
+
 func main() {
-	fmt.Println("Starting server")
-	http.HandleFunc("/payload", handler)
-	http.ListenAndServe(":8080", nil)
+	fileLocation := parseFlags()
+	readfile(fileLocation)
+
+
+	// fmt.Println("Starting server")
+	// http.HandleFunc("/payload", handler)
+	// http.ListenAndServe(":8080", nil)
 
 }

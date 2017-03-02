@@ -1,0 +1,10 @@
+[
+  {
+    "repo_name": "repo1",
+    "location": "~/home/bob"
+  },
+  {
+    "repo_name": "repo2",
+    "location": "~/home/john"
+  }
+]
