@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +20,7 @@ import (
 )
 
 var configData []Config
+var secretKey string
 
 func exec_cmd(cmd string, wg *sync.WaitGroup) {
 	parts := strings.Fields(cmd)
@@ -67,24 +71,50 @@ func process(dl DeployLog) {
 }
 
 func handler(rw http.ResponseWriter, req *http.Request) {
+	if event, ok := req.Header["X-Github-Event"]; ok {
+		if event[0] == "push" {
 
-	// only handle push payload
-	body, err := ioutil.ReadAll(req.Body)
+			body, err := ioutil.ReadAll(req.Body)
 
-	var data map[string]interface{}
-	if err = json.Unmarshal(body, &data); err != nil {
-		logger.Log(fmt.Sprintf("Invalid webhook payload %s", err), ERROR)
+			if secretKey != "" {
+				sig := req.Header.Get("X-Hub-Signature")
+
+				if sig == "" {
+					http.Error(rw, "403 Forbidden - Missing X-Hub-Signature required for HMAC verification", http.StatusForbidden)
+					return
+				}
+
+				mac := hmac.New(sha1.New, []byte(secretKey))
+				mac.Write(body)
+				expectedMAC := mac.Sum(nil)
+				expectedSig := "sha1=" + hex.EncodeToString(expectedMAC)
+				if !hmac.Equal([]byte(expectedSig), []byte(sig)) {
+					http.Error(rw, "403 Forbidden - HMAC verification failed", http.StatusForbidden)
+					return
+				}
+			}
+
+			var data map[string]interface{}
+			if err = json.Unmarshal(body, &data); err != nil {
+				logger.Log(fmt.Sprintf("Invalid webhook payload %s", err), ERROR)
+			}
+
+			repo := data["repository"].(map[string]interface{})
+			headCommit := data["head_commit"].(map[string]interface{})
+
+			var dl DeployLog
+			dl.Id = repo["id"].(float64)
+			dl.RepoName = repo["name"].(string)
+			dl.TimeStamp = headCommit["timestamp"].(string)
+
+			process(dl)
+			rw.Header().Set("Content-Type", "text/plain")
+			rw.Write([]byte("Processing commit to master\n"))
+			return
+		}
 	}
 
-	repo := data["repository"].(map[string]interface{})
-	headCommit := data["head_commit"].(map[string]interface{})
-
-	var dl DeployLog
-	dl.Id = repo["id"].(float64)
-	dl.RepoName = repo["name"].(string)
-	dl.TimeStamp = headCommit["timestamp"].(string)
-
-	process(dl)
+	http.Error(rw, "500 Bad Request", http.StatusBadRequest)
 }
 
 func parseConfig(fileLocation string) {
@@ -104,6 +134,7 @@ func parseConfig(fileLocation string) {
 func parseFlags() (configLocation string) {
 	logsLocaPtr := flag.String("logs", "/var/log/", "Location of flow logs")
 	configLocaPtr := flag.String("config", "", "Location of config file")
+	secretKeyPtr := flag.String("secret", "", "Secret key, needs to be added on github too")
 
 	flag.Usage = func() {
 		fmt.Println("Flow runs a deploy.sh script once commits on master are detected.")
@@ -120,6 +151,10 @@ func parseFlags() (configLocation string) {
 	if len(*configLocaPtr) == 0 {
 		fmt.Println("No config file specified")
 		os.Exit(1)
+	}
+
+	if *secretKeyPtr != "" {
+		secretKey = *secretKeyPtr
 	}
 
 	logger.LogsPath = fmt.Sprintf("%sflow.log", *logsLocaPtr)
