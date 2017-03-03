@@ -1,10 +1,10 @@
 [
   {
-    "repo_name": "repo1",
-    "location": "~/home/bob"
+    "repo_name": "web-hook-test",
+    "location": "/home/ivan/Desktop/web-hook-test"
   },
   {
     "repo_name": "repo2",
-    "location": "~/home/john"
+    "location": "~/Desktop/"
   }
 ]
