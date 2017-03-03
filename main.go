@@ -8,11 +8,12 @@ import (
 	"flag"
 	"os"
 	"os/exec"
-	"log"
 	"sync"
 	"strings"
 
+	. "github.com/ivantjh/flow/constants"
 	. "github.com/ivantjh/flow/models"
+ 	logger "github.com/ivantjh/flow/log"
 )
 
 var configData []Config
@@ -24,7 +25,8 @@ func exec_cmd(cmd string, wg *sync.WaitGroup) {
 
 	_, err := exec.Command(head, parts...).Output()
 	if err != nil {
-		log.Printf("%s", err)
+		errStr := fmt.Sprintf("SCRIPT: %v", err)
+		logger.Log(errStr, ERROR)
 	}
 
 	wg.Done()
@@ -41,12 +43,12 @@ func process(dl DeployLog) {
 	}
 
 	if config.RepoName == "" {
-		log.Printf("No such repository found in config file: %s", dl.RepoName)
+		logger.Log(fmt.Sprintf("No such repository found in config file: %s", dl.RepoName), ERROR)
 	} else {
 
-		// Go into dir of repo, pull and run deploy.sh
+		// Go into dir of repo and run deploy.sh
 		if err := os.Chdir(config.Location); err != nil {
-			log.Printf("Invalid directory: %v", err)
+			logger.Log(fmt.Sprintf("Invalid directory: %v", err), ERROR)
 		}
 
 		cmds := [2]string{"chmod +x deploy.sh",
@@ -60,19 +62,18 @@ func process(dl DeployLog) {
 		}
 
 		wg.Wait()
-		log.Println("Finish executing")
+		logger.Log(fmt.Sprintf("Deployed %s", dl.RepoName), INFO)
 	}
 }
 
 func handler(rw http.ResponseWriter, req *http.Request) {
-	// fmt.Println(req.Header)
 
 	// only handle push payload
 	body, err := ioutil.ReadAll(req.Body)
 
 	var data map[string]interface{}
 	if err = json.Unmarshal(body, &data); err != nil {
-		log.Printf("Invalid webhook payload %v", err)
+		logger.Log(fmt.Sprintf("Invalid webhook payload %s", err), ERROR)
 	}
 
 	repo := data["repository"].(map[string]interface{})
@@ -86,44 +87,52 @@ func handler(rw http.ResponseWriter, req *http.Request) {
 	process(dl)
 }
 
-func readfile(fileLocation string) {
+func parseConfig(fileLocation string) {
 	file, err := ioutil.ReadFile(fileLocation)
 	if err != nil {
-		log.Printf("Unable to read %s\n%v\n", fileLocation, err)
+		fmt.Printf("Unable to read %s\n%v\n", fileLocation, err)
 		os.Exit(1)
 	}
 
 	err = json.Unmarshal(file, &configData)
 	if err != nil {
-		log.Printf("Invalid json from %s\n%v\n", fileLocation, err)
+		fmt.Printf("Invalid json from %s\n%v\n", fileLocation, err)
 		os.Exit(1)
 	}
 }
 
-func parseFlags() (fileLocation string) {
+func parseFlags() (configLocation string) {
+	logsLocaPtr := flag.String("logs", "/var/log/", "Location of flow logs")
+	configLocaPtr := flag.String("config", "", "Location of config file")
+
 	flag.Usage = func() {
 		fmt.Println("Flow runs a deploy.sh script once commits on master are detected.")
-		fmt.Println("Add locations of repositories to be tracked.")
-		fmt.Println("Usage of Flow:")
-		fmt.Println("flow config.json")
+		fmt.Println("Add locations of repositories to be tracked in config.json.")
+		fmt.Println("Usage:")
+		fmt.Println("flow -config config.json\n")
+
+		fmt.Println("Parameters")
+		flag.PrintDefaults()
 	}
 
 	flag.Parse()
 
-	if len(flag.Args()) == 0 {
+	if len(*configLocaPtr) == 0 {
 		fmt.Println("No config file specified")
 		os.Exit(1)
 	}
 
-	return flag.Args()[0]
+	logger.LogsPath = fmt.Sprintf("%sflow.log", *logsLocaPtr)
+	return *configLocaPtr
 }
 
 func main() {
 	fileLocation := parseFlags()
-	readfile(fileLocation)
+	parseConfig(fileLocation)
 
-
-	fmt.Println("Starting server")
+	fmt.Println("Starting server on port 8080")
 	http.HandleFunc("/payload", handler)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		fmt.Printf("%v", err)
+	}
 }
