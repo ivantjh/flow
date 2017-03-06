@@ -16,7 +16,7 @@ import (
 
 	. "github.com/ivantjh/flow/constants"
 	. "github.com/ivantjh/flow/models"
- 	logger "github.com/ivantjh/flow/log"
+	logger "github.com/ivantjh/flow/log"
 )
 
 var configData []Config
@@ -71,9 +71,10 @@ func process(dl DeployLog) {
 }
 
 func handler(rw http.ResponseWriter, req *http.Request) {
-	if event, ok := req.Header["X-Github-Event"]; ok {
-		if event[0] == "push" {
+	rw.Header().Set("Content-Type", "text/plain")
 
+	if event, ok := req.Header["X-Github-Event"]; ok {
+		if event[0] == "push" || event[0] == "ping" {
 			body, err := ioutil.ReadAll(req.Body)
 
 			if secretKey != "" {
@@ -100,21 +101,30 @@ func handler(rw http.ResponseWriter, req *http.Request) {
 			}
 
 			repo := data["repository"].(map[string]interface{})
-			headCommit := data["head_commit"].(map[string]interface{})
+			repoName := repo["name"].(string)
 
-			var dl DeployLog
-			dl.Id = repo["id"].(float64)
-			dl.RepoName = repo["name"].(string)
-			dl.TimeStamp = headCommit["timestamp"].(string)
+			if event[0] == "ping" {
+				logger.Log(fmt.Sprintf("Received ping for %s", repoName), INFO)
 
-			process(dl)
-			rw.Header().Set("Content-Type", "text/plain")
-			rw.Write([]byte("Processing commit to master\n"))
+				rw.Write([]byte(fmt.Sprintf("Ping received for %s\n", repoName)))
+			} else {
+				// push event
+				headCommit := data["head_commit"].(map[string]interface{})
+
+				var dl DeployLog
+				dl.Id = repo["id"].(float64)
+				dl.RepoName = repoName
+				dl.TimeStamp = headCommit["timestamp"].(string)
+
+				process(dl)
+				rw.Write([]byte(fmt.Sprintf("Processing commit to master for %s\n", repoName)))
+			}
+
 			return
 		}
 	}
 
-	http.Error(rw, "500 Bad Request", http.StatusBadRequest)
+	http.Error(rw, "400 Bad Request", http.StatusBadRequest)
 }
 
 func parseConfig(fileLocation string) {
@@ -132,17 +142,17 @@ func parseConfig(fileLocation string) {
 }
 
 func parseFlags() (configLocation string) {
-	logsLocaPtr := flag.String("logs", "/var/log/", "Location of flow logs")
-	configLocaPtr := flag.String("config", "", "Location of config file")
-	secretKeyPtr := flag.String("secret", "", "Secret key, needs to be added on github too")
+	logsLocaPtr := flag.String("logs", "/var/log/", "Directory of flow log")
+	configLocaPtr := flag.String("config", "", "Directory of config file")
+	secretKeyPtr := flag.String("secret", "", "Webhook's secret (if configured on Github)")
 
 	flag.Usage = func() {
+		fmt.Println("")
+		fmt.Println("Usage: flow -config config.json [OPTIONS]\n")
 		fmt.Println("Flow runs a deploy.sh script once commits on master are detected.")
-		fmt.Println("Add locations of repositories to be tracked in config.json.")
-		fmt.Println("Usage:")
-		fmt.Println("flow -config config.json\n")
+		fmt.Println("Add locations of repositories to be tracked in a config.json.\n")
 
-		fmt.Println("Parameters")
+		fmt.Println("Options:")
 		flag.PrintDefaults()
 	}
 
@@ -157,7 +167,14 @@ func parseFlags() (configLocation string) {
 		secretKey = *secretKeyPtr
 	}
 
-	logger.LogsPath = fmt.Sprintf("%sflow.log", *logsLocaPtr)
+	logsPath := *logsLocaPtr
+
+	if string(logsPath[len(logsPath) - 1])  == "/" {
+		logger.LogsPath = fmt.Sprintf("%sflow.log", logsPath)
+	} else {
+		logger.LogsPath = fmt.Sprintf("%s/flow.log", logsPath)
+	}
+
 	return *configLocaPtr
 }
 
