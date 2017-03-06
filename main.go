@@ -142,13 +142,14 @@ func parseConfig(fileLocation string) {
 	}
 }
 
-func parseFlags() (configLocation string) {
+func parseFlags() (string, int) {
 	user, _ := user.Current()
 	defaultLogPath := fmt.Sprintf("/home/%s/", user.Username)
 
 	logsPathPtr := flag.String("logs", defaultLogPath, "Directory of flow log")
 	configPathPtr := flag.String("config", "", "Directory of config file")
 	secretKeyPtr := flag.String("secret", "", "Webhook's secret (if configured on Github)")
+	portPtr := flag.Int("port", 8080, "Port server will be listening to")
 
 	flag.Usage = func() {
 		fmt.Println("")
@@ -179,16 +180,18 @@ func parseFlags() (configLocation string) {
 		logger.LogsPath = fmt.Sprintf("%s/flow.log", logsPath)
 	}
 
-	return *configPathPtr
+	return *configPathPtr, *portPtr
 }
 
 func main() {
-	fileLocation := parseFlags()
+	fileLocation, portNo := parseFlags()
 	parseConfig(fileLocation)
 
-	fmt.Println("Starting server on port 8080")
+	fmt.Printf("Starting server on port %d\n", portNo)
 	http.HandleFunc("/", handler)
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+
+	portStr := fmt.Sprintf(":%d", portNo)
+	if err := http.ListenAndServe(portStr, nil); err != nil {
 		fmt.Printf("%v", err)
 	}
 }
