@@ -11,6 +11,7 @@ import (
 	"flag"
 	"os"
 	"os/exec"
+	"os/user"
 	"sync"
 	"strings"
 
@@ -142,8 +143,11 @@ func parseConfig(fileLocation string) {
 }
 
 func parseFlags() (configLocation string) {
-	logsLocaPtr := flag.String("logs", "/var/log/", "Directory of flow log")
-	configLocaPtr := flag.String("config", "", "Directory of config file")
+	user, _ := user.Current()
+	defaultLogPath := fmt.Sprintf("/home/%s/", user.Username)
+
+	logsPathPtr := flag.String("logs", defaultLogPath, "Directory of flow log")
+	configPathPtr := flag.String("config", "", "Directory of config file")
 	secretKeyPtr := flag.String("secret", "", "Webhook's secret (if configured on Github)")
 
 	flag.Usage = func() {
@@ -158,7 +162,7 @@ func parseFlags() (configLocation string) {
 
 	flag.Parse()
 
-	if len(*configLocaPtr) == 0 {
+	if len(*configPathPtr) == 0 {
 		fmt.Println("No config file specified")
 		os.Exit(1)
 	}
@@ -167,7 +171,7 @@ func parseFlags() (configLocation string) {
 		secretKey = *secretKeyPtr
 	}
 
-	logsPath := *logsLocaPtr
+	logsPath := *logsPathPtr
 
 	if string(logsPath[len(logsPath) - 1])  == "/" {
 		logger.LogsPath = fmt.Sprintf("%sflow.log", logsPath)
@@ -175,7 +179,7 @@ func parseFlags() (configLocation string) {
 		logger.LogsPath = fmt.Sprintf("%s/flow.log", logsPath)
 	}
 
-	return *configLocaPtr
+	return *configPathPtr
 }
 
 func main() {
@@ -183,7 +187,7 @@ func main() {
 	parseConfig(fileLocation)
 
 	fmt.Println("Starting server on port 8080")
-	http.HandleFunc("/payload", handler)
+	http.HandleFunc("/", handler)
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		fmt.Printf("%v", err)
 	}
