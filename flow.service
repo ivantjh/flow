@@ -1,0 +1,14 @@
+[Unit]
+Description=Go server listening for commits on master
+
+[Service]
+User=chester
+Group=chester
+Type=simple
+WorkingDirectory=/home/{user}
+ExecStart=/home/{user}/flow --config config.json --log /home/{user}/
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
